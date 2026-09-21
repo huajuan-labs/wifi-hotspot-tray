@@ -497,16 +497,28 @@ if ($ExportIcons) {
 if ($PreviewIcons) {
     $size = 128
     $gap = 14
-    $states = @('off', 'on', 'on-clients', 'busy')
+    $labelHeight = 34
+    $states = @(
+        @{ State = 'off'; Label = 'Off' }
+        @{ State = 'on'; Label = 'On' }
+        @{ State = 'on-clients'; Label = 'On + client' }
+        @{ State = 'busy'; Label = 'Switching' }
+    )
     $tileWidth = $size + $gap
     $totalWidth = $tileWidth * $states.Count + $gap
-    $totalHeight = $size + $gap * 2
+    $totalHeight = $size + $labelHeight + $gap * 2
     $preview = New-Object System.Drawing.Bitmap($totalWidth, $totalHeight, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
     $g = [System.Drawing.Graphics]::FromImage($preview)
+    $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::ClearTypeGridFit
     # 深色底，方便看清浅色描边
     $g.Clear([System.Drawing.Color]::FromArgb(32, 32, 36))
+    $font = New-Object System.Drawing.Font('Segoe UI', 13)
+    $labelBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(200, 200, 208))
+    $labelFormat = New-Object System.Drawing.StringFormat
+    $labelFormat.Alignment = [System.Drawing.StringAlignment]::Center
     $index = 0
-    foreach ($state in $states) {
+    foreach ($item in $states) {
+        $state = $item.State
         $left = $gap + $index * $tileWidth
         $frameBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(48, 48, 54))
         $g.FillRectangle($frameBrush, $left, $gap, $size, $size)
@@ -531,14 +543,19 @@ if ($PreviewIcons) {
         Write-Host ("{0,-11} 边界 x:{1}-{2} y:{3}-{4} {5}" -f $state, $minX, $maxX, $minY, $maxY,
             $(if ($touch) { "被裁切($($touch -join '/'))" } else { '完整' }))
         $g.DrawImage($tile, $left, $gap, $size, $size)
+        $labelRect = New-Object System.Drawing.RectangleF($left, ($gap + $size + 6), $size, $labelHeight)
+        $g.DrawString($item.Label, $font, $labelBrush, $labelRect, $labelFormat)
         $tile.Dispose()
         $index++
     }
+    $font.Dispose(); $labelBrush.Dispose(); $labelFormat.Dispose()
     $g.Dispose()
-    $out = Join-Path $PSScriptRoot 'hotspot-icon-preview.png'
+    $docsDir = Join-Path $PSScriptRoot 'docs'
+    if (-not (Test-Path -LiteralPath $docsDir)) { New-Item -ItemType Directory -Path $docsDir | Out-Null }
+    $out = Join-Path $docsDir 'tray-icons.png'
     $preview.Save($out, [System.Drawing.Imaging.ImageFormat]::Png)
     $preview.Dispose()
-    Write-Host "已生成预览: $out  （顺序：off / on / on-clients / busy）"
+    Write-Host "已生成预览: $out"
     $timer.Stop()
     $script:Notify.Visible = $false
     $script:Notify.Dispose()
