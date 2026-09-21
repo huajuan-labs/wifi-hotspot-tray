@@ -36,8 +36,71 @@ param(
     [Parameter(ParameterSetName = 'On')][string]$Passphrase,
     # 开机自启场景：登录时网络可能还没就绪，先等一会儿再开热点。
     [Parameter(ParameterSetName = 'On')][switch]$WaitForNetwork,
-    [Parameter(ParameterSetName = 'On')][int]$NetworkTimeoutSeconds = 180
+    [Parameter(ParameterSetName = 'On')][int]$NetworkTimeoutSeconds = 180,
+    # 界面语言：auto 跟随系统，zh 中文，en 英文
+    [ValidateSet('auto', 'zh', 'en')][string]$Language = 'auto'
 )
+
+function Get-HotspotCliStrings {
+    param([Parameter(Mandatory)][ValidateSet('zh', 'en')][string]$Lang)
+
+    if ($Lang -eq 'en') {
+        return @{
+            ErrNoInternet    = 'No active Internet connection; cannot locate the hotspot manager.'
+            WaitingNetwork   = 'Waiting for the network (up to {0} seconds)…'
+            NetworkReady     = 'Network is ready.'
+            ClientsHeader    = 'Connected devices:'
+            ErrShortKey      = 'The hotspot password must be at least 8 characters.'
+            AlreadyOn        = 'The hotspot is already on.'
+            ErrStartFailed   = 'Could not start the hotspot. Check that the Wi-Fi radio is on and that the sharing source in Settings > Network & internet > Mobile hotspot is available.'
+            AutoCloseHint    = 'This window closes in {0} seconds; press Ctrl+C to exit now.'
+            AlreadyOff       = 'The hotspot was already off.'
+            ErrStopFailed    = 'Could not stop the hotspot; it is still active.'
+            WatchStarted     = 'Watch mode started, checking every {0} seconds. Press Ctrl+C to exit.'
+            WatchReviving    = 'Hotspot went down, re-enabling…'
+            WatchState       = 'Current state: {0}'
+        }
+    }
+
+    return @{
+        ErrNoInternet    = '当前没有活动的 Internet 连接，无法定位热点管理器。'
+        WaitingNetwork   = '等待网络就绪（最多 {0} 秒）…'
+        NetworkReady     = '网络已就绪。'
+        ClientsHeader    = '已连接设备：'
+        ErrShortKey      = '热点密码至少 8 位。'
+        AlreadyOn        = '热点已在运行，无需重复开启。'
+        ErrStartFailed   = '开启失败。请确认 Wi-Fi 无线电已打开，且「设置 → 网络和 Internet → 移动热点」里的共享源可用。'
+        AutoCloseHint    = '{0} 秒后自动关闭窗口，按 Ctrl+C 立即退出。'
+        AlreadyOff       = '热点本来就是关闭的。'
+        ErrStopFailed    = '关闭失败，热点仍处于活动状态。'
+        WatchStarted     = '守护模式已启动，每 {0} 秒检查一次。按 Ctrl+C 退出。'
+        WatchReviving    = '热点已关闭，重新开启…'
+        WatchState       = '当前状态：{0}'
+    }
+}
+
+# 不能用 CurrentUICulture 判断：Windows PowerShell 5.1 无中文 UI 资源，
+# 系统会做语言回退，进程内读到的是 en-US。GetUserDefaultUILanguage 才是用户真实的首选界面语言。
+function Get-PreferredLanguage {
+    try {
+        if (-not ([System.Management.Automation.PSTypeName]'HotspotCli.SystemLanguage').Type) {
+            Add-Type -Namespace HotspotCli -Name SystemLanguage -MemberDefinition @'
+[DllImport("kernel32.dll")]
+public static extern ushort GetUserDefaultUILanguage();
+'@
+        }
+        # 主语言 ID 4 = 中文
+        if (([HotspotCli.SystemLanguage]::GetUserDefaultUILanguage() -band 0x3FF) -eq 0x04) { return 'zh' }
+        return 'en'
+    }
+    catch {
+        if ([System.Globalization.CultureInfo]::CurrentUICulture.TwoLetterISOLanguageName -eq 'zh') { return 'zh' }
+        return 'en'
+    }
+}
+
+if ($Language -eq 'auto') { $Language = Get-PreferredLanguage }
+$script:T = Get-HotspotCliStrings -Lang $Language
 
 # 双击桌面快捷方式时窗口一闪而过，用户会看不出到底成没成功。
 # 给 -On 一个短暂的停留时间，让结果能被看见。
@@ -78,7 +141,7 @@ function Wait-HotspotState {
 function Get-TetheringContext {
     $profile = [Windows.Networking.Connectivity.NetworkInformation, Windows.Networking.Connectivity, ContentType = WindowsRuntime]::GetInternetConnectionProfile()
     if (-not $profile) {
-        throw '当前没有活动的 Internet 连接，无法定位热点管理器。'
+        throw $script:T.ErrNoInternet
     }
     [pscustomobject]@{
         Profile = $profile
@@ -89,10 +152,10 @@ function Get-TetheringContext {
 # 开机自启时 WLAN 可能还没连上，这里先等到有 Internet 连接再继续。
 if ($WaitForNetwork) {
     $deadline = (Get-Date).AddSeconds($NetworkTimeoutSeconds)
-    Write-Host "等待网络就绪（最多 $NetworkTimeoutSeconds 秒）…"
+    Write-Host ($script:T.WaitingNetwork -f $NetworkTimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
         if ([Windows.Networking.Connectivity.NetworkInformation, Windows.Networking.Connectivity, ContentType = WindowsRuntime]::GetInternetConnectionProfile()) {
-            Write-Host '网络已就绪。'
+            Write-Host $script:T.NetworkReady
             break
         }
         Start-Sleep -Seconds 5
@@ -140,7 +203,7 @@ function Show-HotspotStatus {
         Upstream            = $connectionProfile.ProfileName
     }
     if ($clients) {
-        Write-Host '已连接设备：'
+        Write-Host $script:T.ClientsHeader
         foreach ($c in $clients) {
             $hosts = ($c.Hostnames | Where-Object { $_ }) -join ', '
             Write-Host ("  · {0}  {1}{2}" -f $c.Name, $c.MAC, $(if ($hosts) { "  ($hosts)" } else { '' }))
@@ -155,7 +218,7 @@ switch ($PSCmdlet.ParameterSetName) {
     'On' {
         if ($Ssid -or $Passphrase) {
             if ($Passphrase -and $Passphrase.Length -lt 8) {
-                throw '热点密码至少 8 位。'
+                throw $script:T.ErrShortKey
             }
             $ap = [Activator]::CreateInstance($apType)
             if ($Ssid) { $ap.Ssid = $Ssid }
@@ -166,44 +229,44 @@ switch ($PSCmdlet.ParameterSetName) {
         Disable-NoConnectionsTimeout -Manager $manager
 
         if ($manager.TetheringOperationalState -eq 'On') {
-            Write-Host '热点已在运行，无需重复开启。'
+            Write-Host $script:T.AlreadyOn
         }
         else {
             $manager.StartTetheringAsync() | Out-Null
             if ((Wait-HotspotState -Manager $manager -Target 'On') -ne 'On') {
-                throw '开启失败。请确认 Wi-Fi 无线电已打开，且「设置 → 网络和 Internet → 移动热点」里的共享源可用。'
+                throw $script:T.ErrStartFailed
             }
         }
         Show-HotspotStatus -Manager $manager | Format-List
         if ($Host.Name -eq 'ConsoleHost') {
             Write-Host ''
-            Write-Host "$AutoCloseDelaySeconds 秒后自动关闭窗口，按 Ctrl+C 立即退出。"
+            Write-Host ($script:T.AutoCloseHint -f $AutoCloseDelaySeconds)
             Start-Sleep -Seconds $AutoCloseDelaySeconds
         }
     }
     'Off' {
         if ($manager.TetheringOperationalState -eq 'Off') {
-            Write-Host '热点本来就是关闭的。'
+            Write-Host $script:T.AlreadyOff
         }
         else {
             $manager.StopTetheringAsync() | Out-Null
             if ((Wait-HotspotState -Manager $manager -Target 'Off') -ne 'Off') {
-                throw '关闭失败，热点仍处于活动状态。'
+                throw $script:T.ErrStopFailed
             }
         }
         Show-HotspotStatus -Manager $manager | Format-List
     }
     'Watch' {
         # Windows 默认在「无设备连接」时自动关闭移动热点，守护模式负责把它拉回来。
-        Write-Host "守护模式已启动，每 $IntervalSeconds 秒检查一次。按 Ctrl+C 退出。"
+        Write-Host ($script:T.WatchStarted -f $IntervalSeconds)
         while ($true) {
             $fresh = Get-TetheringContext
             if ($fresh.Manager.TetheringOperationalState -ne 'On') {
-                Write-Host "[$(Get-Date -Format 'HH:mm:ss')] 热点已关闭，重新开启…"
+                Write-Host "[$(Get-Date -Format 'HH:mm:ss')] $($script:T.WatchReviving)"
                 Disable-NoConnectionsTimeout -Manager $fresh.Manager
                 $fresh.Manager.StartTetheringAsync() | Out-Null
                 $state = Wait-HotspotState -Manager $fresh.Manager -Target 'On' -TimeoutSeconds 20
-                Write-Host "[$(Get-Date -Format 'HH:mm:ss')] 当前状态：$state"
+                Write-Host "[$(Get-Date -Format 'HH:mm:ss')] $($script:T.WatchState -f $state)"
             }
             Start-Sleep -Seconds $IntervalSeconds
         }

@@ -35,6 +35,17 @@ netsh wlan show drivers | Select-String 'Hosted network supported'
 
 > **不要在 PowerShell 7（`pwsh`）里运行。** WinRT 异步投影依赖 `System.Runtime.WindowsRuntime`，PS7 不提供，调用会失败。`install.ps1` 创建的快捷方式已经指向正确的引擎。
 
+## 界面语言
+
+三个脚本都会自动跟随 Windows 的显示语言：中文系统输出中文，其他语言输出英文。也可以强制指定：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\hotspot.ps1 -Status -Language en
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Language en -WithAutoStart
+```
+
+语言判断用的是 Win32 的 `GetUserDefaultUILanguage`，而不是 .NET 的 `CurrentUICulture`。原因是 Windows PowerShell 5.1 不带中文 UI 资源，系统会对它做语言回退，进程内读到的往往是 `en-US`——用它判断会让中文系统拿到英文界面。
+
 ## 快速开始
 
 ```powershell
@@ -87,6 +98,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -WithAutoS
 | `-On -Ssid X -Passphrase Y` | 用新的名称和密码开启 |
 | `-On -WaitForNetwork` | 先等网络就绪再开，默认最多等 180 秒（用 `-NetworkTimeoutSeconds` 调整） |
 | `-Watch` | 守护模式：被关掉就自动拉回来，Ctrl+C 退出 |
+| `-Language auto\|zh\|en` | 指定界面语言，默认 `auto`（跟随系统） |
 
 所有命令都必须用 5.1 引擎：
 

@@ -35,6 +35,17 @@ netsh wlan show drivers | Select-String 'Hosted network supported'
 
 > **Do not run this with PowerShell 7 (`pwsh`).** The WinRT async projection depends on `System.Runtime.WindowsRuntime`, which PS7 does not ship. Calls fail. The `install.ps1` shortcuts already use the correct engine.
 
+## Languages
+
+All three scripts follow your Windows display language automatically: Chinese systems get Chinese output, everything else gets English. Force a language with `-Language zh` or `-Language en`:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\hotspot.ps1 -Status -Language en
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Language en -WithAutoStart
+```
+
+Detection uses the Win32 `GetUserDefaultUILanguage` rather than .NET's `CurrentUICulture`, because Windows PowerShell 5.1 ships no Chinese UI resources and the OS falls back to `en-US` inside that process — reading `CurrentUICulture` would hand an English UI to a Chinese system.
+
 ## Quick start
 
 ```powershell
@@ -59,6 +70,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -WithAutoS
 The auto-start entry waits up to 180 seconds for the network to come up before enabling the hotspot, because at login Wi-Fi is usually not connected yet.
 
 ## Tray menu
+
+The menu follows the same language rule. On an English system it reads:
 
 ```
 Turn hotspot on
@@ -87,6 +100,7 @@ The icon reflects state: grey with a red slash when off, green when on, green wi
 | `-On -Ssid X -Passphrase Y` | Start it with a new name and password |
 | `-On -WaitForNetwork` | Wait for connectivity first, up to 180s (`-NetworkTimeoutSeconds` to change) |
 | `-Off` / `-On` / `-Status` / `-Watch` | `-Watch` keeps re-enabling the hotspot if something turns it off, until Ctrl+C |
+| `-Language auto\|zh\|en` | Override the UI language (default `auto`) |
 
 All commands need the 5.1 engine:
 
@@ -174,6 +188,7 @@ Tested end to end on Windows 11 (build 26200) with an Intel Wireless-AC 9560, in
 - 8 clients maximum — a Windows limit, not ours
 - Client device names are not always available; sometimes only MAC and hostname
 - Windows Mobile Hotspot is NAT-only. Clients sit behind the PC on a separate subnet (`192.168.137.0/24`) and are not members of the upstream LAN
+- Localisation covers English and Chinese; any other display language falls back to English. Code comments are in Chinese
 
 ## License
 

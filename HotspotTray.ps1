@@ -20,13 +20,161 @@ param(
     # 把开关两种状态的图标导出成 .ico，方便给快捷方式用
     [switch]$ExportIcons,
     # 生成一张四种状态的预览图，用来确认配色和形状
-    [switch]$PreviewIcons
+    [switch]$PreviewIcons,
+    # 界面语言：auto 跟随系统，zh 中文，en 英文
+    [ValidateSet('auto', 'zh', 'en')][string]$Language = 'auto'
 )
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Runtime.WindowsRuntime | Out-Null
+
+# ---------------------------------------------------------------- 界面语言
+# 所有面向用户的文字都从这里取，代码注释仍保持中文。
+function Get-HotspotStrings {
+    param([Parameter(Mandatory)][ValidateSet('zh', 'en')][string]$Lang)
+
+    if ($Lang -eq 'en') {
+        return @{
+            NotifyTitle        = 'WiFi Hotspot'
+            MenuOn             = 'Turn hotspot on'
+            MenuOff            = 'Turn hotspot off'
+            MenuStatusInit     = 'Status: querying…'
+            MenuInfo           = 'Connection details…'
+            MenuAutoTray       = 'Start tray at login'
+            MenuAutoHotspot    = 'Enable hotspot at login'
+            MenuExit           = 'Exit'
+            StatusFormat       = 'Status: {0} ({1}/{2} clients)'
+            StatusUnreadable   = 'Status: unavailable'
+            StateOn            = 'on'
+            StateOff           = 'off'
+            TooltipFormat      = "WiFi Hotspot: {0}`n{1}"
+            BalloonOn          = 'Hotspot is on. Devices can now find and join it.'
+            BalloonOff         = 'Hotspot is off.'
+            BalloonFailed      = '{0} failed: {1}'
+            ActionOn           = 'Enabling'
+            ActionOff          = 'Disabling'
+            InfoTitle          = 'WiFi Hotspot connection details'
+            InfoState          = 'State: {0}'
+            InfoSsid           = 'Network name: {0}'
+            InfoPassphrase     = 'secret'
+            InfoUpstream       = 'Shared from: {0}'
+            InfoClients        = 'Clients: {0}/{1}'
+            InfoClientList     = 'Connected devices:'
+            InfoReadFailed     = 'Could not read status: {0}'
+            LogStarted         = 'Tray app started'
+            LogStopped         = 'Tray app stopped'
+            LogTimeoutOff      = 'Disabled the no-client auto-off timeout'
+            LogTimeoutFailed   = 'Could not disable the timeout: {0}'
+            LogSetHotspot      = 'Set-Hotspot target={0} result={1}'
+            LogRefreshFailed   = 'Status refresh failed: {0}'
+            LogStartupAdded    = 'Added logon shortcut: {0}'
+            LogStartupRemoved  = 'Removed logon shortcut'
+            LogStartupFailed   = 'Could not change logon shortcut: {0}'
+            LogAutoAdded       = 'Added auto-hotspot logon shortcut: {0}'
+            LogAutoRemoved     = 'Removed auto-hotspot logon shortcut'
+            LogAutoFailed      = 'Could not change auto-hotspot shortcut: {0}'
+            LogThemeLoaded     = 'Loaded custom palette: {0}'
+            LogThemeFailed     = 'Palette file unreadable, using defaults: {0}'
+            LogIconFailed      = 'Custom icon failed to load {0}: {1}'
+            LogIconExportFailed = 'Icon export failed: {0}'
+            LogExit            = 'User exited the tray app'
+            ErrNoInternet      = 'No active Internet connection.'
+            ErrToggleFailed    = 'Operation did not take effect; state is still {0}. Check that the Wi-Fi radio is on.'
+            ShortcutTray       = 'WiFi Hotspot Tray.lnk'
+            ShortcutTrayDesc   = 'WiFi Hotspot tray controller'
+            ShortcutAuto       = 'WiFi Hotspot Auto.lnk'
+            ShortcutAutoDesc   = 'Wait for the network, then enable the WiFi hotspot at login'
+            AltShortcutTray    = 'WiFi热点控制台.lnk'
+            AltShortcutAuto    = 'WiFi热点-开机自动开启.lnk'
+            SelfTestDone       = 'Self-test: icon, menu and status read all completed.'
+            IconLineFmt        = 'icon {0,-11} {1}x{2}'
+            Exported           = 'Exported {0}'
+        }
+    }
+
+    return @{
+        NotifyTitle        = 'WiFi 热点'
+        MenuOn             = '开启热点'
+        MenuOff            = '关闭热点'
+        MenuStatusInit     = '状态：查询中…'
+        MenuInfo           = '显示连接信息…'
+        MenuAutoTray       = '开机自动启动'
+        MenuAutoHotspot    = '开机自动开启热点'
+        MenuExit           = '退出'
+        StatusFormat       = '状态：{0}（{1}/{2} 台设备）'
+        StatusUnreadable   = '状态：读取失败'
+        StateOn            = '已开启'
+        StateOff           = '已关闭'
+        TooltipFormat      = "WiFi 热点：{0}`n{1}"
+        BalloonOn          = '已开启，设备可以搜索并连接了。'
+        BalloonOff         = '已关闭。'
+        BalloonFailed      = '{0}失败：{1}'
+        ActionOn           = '开启'
+        ActionOff          = '关闭'
+        InfoTitle          = 'WiFi 热点连接信息'
+        InfoState          = '状态：{0}'
+        InfoSsid           = '网络名称：{0}'
+        InfoPassphrase     = '密码：{0}'
+        InfoUpstream       = '共享来源：{0}'
+        InfoClients        = '已连接设备：{0}/{1}'
+        InfoClientList     = '已连接设备列表：'
+        InfoReadFailed     = '读取失败：{0}'
+        LogStarted         = '托盘程序启动'
+        LogStopped         = '托盘程序结束'
+        LogTimeoutOff      = '已关闭「无设备连接自动断开」'
+        LogTimeoutFailed   = '关闭超时失败: {0}'
+        LogSetHotspot      = 'Set-Hotspot 目标={0} 结果={1}'
+        LogRefreshFailed   = '刷新状态失败: {0}'
+        LogStartupAdded    = '已添加开机自启: {0}'
+        LogStartupRemoved  = '已移除开机自启'
+        LogStartupFailed   = '设置开机自启失败: {0}'
+        LogAutoAdded       = '已添加开机自动开热点: {0}'
+        LogAutoRemoved     = '已移除开机自动开热点'
+        LogAutoFailed      = '设置开机自动开热点失败: {0}'
+        LogThemeLoaded     = '已加载自定义配色: {0}'
+        LogThemeFailed     = '配色文件读取失败，改用默认配色: {0}'
+        LogIconFailed      = '自定义图标加载失败 {0} : {1}'
+        LogIconExportFailed = '导出图标失败: {0}'
+        LogExit            = '用户退出托盘程序'
+        ErrNoInternet      = '当前没有活动的 Internet 连接。'
+        ErrToggleFailed    = '操作未生效，当前状态仍为 {0}。请确认 Wi-Fi 无线电已打开。'
+        ShortcutTray       = 'WiFi热点控制台.lnk'
+        ShortcutTrayDesc   = 'WiFi 热点托盘控制器'
+        ShortcutAuto       = 'WiFi热点-开机自动开启.lnk'
+        ShortcutAutoDesc   = '开机后等待网络就绪，然后自动开启 WiFi 热点'
+        AltShortcutTray    = 'WiFi Hotspot Tray.lnk'
+        AltShortcutAuto    = 'WiFi Hotspot Auto.lnk'
+        SelfTestDone       = '自检：图标、菜单、状态读取均已完成。'
+        IconLineFmt        = '图标 {0,-11} 尺寸 {1}x{2}'
+        Exported           = '已导出 {0}'
+    }
+}
+
+# 注意：不能用 CurrentUICulture 判断。Windows PowerShell 5.1 没有中文 UI 资源，
+# 系统会对它做语言回退，进程内读到的往往是 en-US，而用户其实用的是中文系统。
+# GetUserDefaultUILanguage 返回的是用户真实的首选界面语言。
+function Get-PreferredLanguage {
+    try {
+        if (-not ([System.Management.Automation.PSTypeName]'HotspotTray.SystemLanguage').Type) {
+            Add-Type -Namespace HotspotTray -Name SystemLanguage -MemberDefinition @'
+[DllImport("kernel32.dll")]
+public static extern ushort GetUserDefaultUILanguage();
+'@
+        }
+        # 主语言 ID 4 = 中文（简体、繁体同属 4）
+        if (([HotspotTray.SystemLanguage]::GetUserDefaultUILanguage() -band 0x3FF) -eq 0x04) { return 'zh' }
+        return 'en'
+    }
+    catch {
+        if ([System.Globalization.CultureInfo]::CurrentUICulture.TwoLetterISOLanguageName -eq 'zh') { return 'zh' }
+        return 'en'
+    }
+}
+
+if ($Language -eq 'auto') { $Language = Get-PreferredLanguage }
+$script:T = Get-HotspotStrings -Lang $Language
 
 $LogPath = Join-Path $PSScriptRoot 'hotspot-tray.log'
 
@@ -40,7 +188,7 @@ function Write-Log {
 
 function Get-TetheringContext {
     $profile = [Windows.Networking.Connectivity.NetworkInformation, Windows.Networking.Connectivity, ContentType = WindowsRuntime]::GetInternetConnectionProfile()
-    if (-not $profile) { throw '当前没有活动的 Internet 连接。' }
+    if (-not $profile) { throw $script:T.ErrNoInternet }
     [pscustomobject]@{
         Profile = $profile
         Manager = [Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager, Windows.Networking.NetworkOperators, ContentType = WindowsRuntime]::CreateFromConnectionProfile($profile)
@@ -55,11 +203,11 @@ function Disable-HotspotTimeout {
     try {
         if ($managerType.GetMethod('IsNoConnectionsTimeoutEnabled').Invoke($Manager, @())) {
             $managerType.GetMethod('DisableNoConnectionsTimeout').Invoke($Manager, @()) | Out-Null
-            Write-Log '已关闭「无设备连接自动断开」'
+            Write-Log $script:T.LogTimeoutOff
         }
     }
     catch {
-        Write-Log "关闭超时失败: $($_.Exception.Message)"
+        Write-Log ($script:T.LogTimeoutFailed -f $_.Exception.Message)
     }
 }
 
@@ -96,9 +244,9 @@ function Set-Hotspot {
     }
 
     $final = $ctx.Manager.TetheringOperationalState.ToString()
-    Write-Log "Set-Hotspot Target=$Target 结果=$final"
+    Write-Log ($script:T.LogSetHotspot -f $Target, $final)
     if ($final -ne $Target) {
-        throw "操作未生效，当前状态仍为 $final。请确认 Wi-Fi 无线电已打开。"
+        throw ($script:T.ErrToggleFailed -f $final)
     }
     return $final
 }
@@ -126,10 +274,10 @@ if (Test-Path -LiteralPath $ThemePath) {
         foreach ($key in @($script:IconTheme.Keys)) {
             if ($cfg.PSObject.Properties.Name -contains $key) { $script:IconTheme[$key] = $cfg.$key }
         }
-        Write-Log "已加载自定义配色: $ThemePath"
+        Write-Log ($script:T.LogThemeLoaded -f $ThemePath)
     }
     catch {
-        Write-Log "配色文件读取失败，改用默认配色: $($_.Exception.Message)"
+        Write-Log ($script:T.LogThemeFailed -f $_.Exception.Message)
     }
 }
 
@@ -239,7 +387,7 @@ function Get-CustomStateIcon {
             return $icon
         }
         catch {
-            Write-Log "自定义图标加载失败 $path : $($_.Exception.Message)"
+            Write-Log ($script:T.LogIconFailed -f $path, $_.Exception.Message)
         }
     }
     return $null
@@ -275,39 +423,42 @@ function Export-StateIcons {
         $icon.Dispose()
         [HotspotTray.NativeIcon]::DestroyIcon($hIcon) | Out-Null
         $bmp.Dispose()
-        Write-Host "已导出 $target"
+        Write-Host ($script:T.Exported -f $target)
     }
 }
 
 $script:Notify = New-Object System.Windows.Forms.NotifyIcon
 $script:Notify.Icon = Get-StateIcon -State 'off'
-$script:Notify.Text = 'WiFi 热点'
+$script:Notify.Text = $script:T.NotifyTitle
 
 $menu = New-Object System.Windows.Forms.ContextMenuStrip
 
-$itemOn = $menu.Items.Add('开启热点')
-$itemOff = $menu.Items.Add('关闭热点')
+$itemOn = $menu.Items.Add($script:T.MenuOn)
+$itemOff = $menu.Items.Add($script:T.MenuOff)
 $menu.Items.Add('-') | Out-Null
-$itemStatus = $menu.Items.Add('状态：查询中…')
+$itemStatus = $menu.Items.Add($script:T.MenuStatusInit)
 $itemStatus.Enabled = $false
-$itemInfo = $menu.Items.Add('显示连接信息…')
+$itemInfo = $menu.Items.Add($script:T.MenuInfo)
 $menu.Items.Add('-') | Out-Null
-$itemStartup = $menu.Items.Add('开机自动启动')
+$itemStartup = $menu.Items.Add($script:T.MenuAutoTray)
 $itemStartup.CheckOnClick = $true
-$itemAutoHotspot = $menu.Items.Add('开机自动开启热点')
+$itemAutoHotspot = $menu.Items.Add($script:T.MenuAutoHotspot)
 $itemAutoHotspot.CheckOnClick = $true
 $menu.Items.Add('-') | Out-Null
-$itemExit = $menu.Items.Add('退出')
+$itemExit = $menu.Items.Add($script:T.MenuExit)
 
 $StartupDir = [Environment]::GetFolderPath('Startup')
-$StartupLnk = Join-Path $StartupDir 'WiFi热点控制台.lnk'
-$AutoHotspotLnk = Join-Path $StartupDir 'WiFi热点-开机自动开启.lnk'
+$StartupLnk = Join-Path $StartupDir $script:T.ShortcutTray
+$AutoHotspotLnk = Join-Path $StartupDir $script:T.ShortcutAuto
+# 切换语言后旧名字的快捷方式会变成孤儿，创建时顺手清掉
+$AltStartupLnk = Join-Path $StartupDir $script:T.AltShortcutTray
+$AltAutoHotspotLnk = Join-Path $StartupDir $script:T.AltShortcutAuto
 
 function Get-ShortcutIconLocation {
     # 优先用自己画的图标；没有就先导出，导出失败才退回系统图标
     $own = Join-Path $PSScriptRoot 'hotspot-on.ico'
     if (-not (Test-Path -LiteralPath $own)) {
-        try { Export-StateIcons } catch { Write-Log "导出图标失败: $($_.Exception.Message)" }
+        try { Export-StateIcons } catch { Write-Log ($script:T.LogIconExportFailed -f $_.Exception.Message) }
     }
     if (Test-Path -LiteralPath $own) { return "$own,0" }
     return "$env:SystemRoot\System32\netshell.dll,0"
@@ -322,7 +473,7 @@ function New-TrayShortcut {
     $lnk.WorkingDirectory = $PSScriptRoot
     $lnk.WindowStyle = 7
     $lnk.IconLocation = Get-ShortcutIconLocation
-    $lnk.Description = 'WiFi 热点托盘控制器'
+    $lnk.Description = $script:T.ShortcutTrayDesc
     $lnk.Save()
 }
 
@@ -334,16 +485,16 @@ function New-AutoHotspotShortcut {
     $lnk.WorkingDirectory = $PSScriptRoot
     $lnk.WindowStyle = 7
     $lnk.IconLocation = Get-ShortcutIconLocation
-    $lnk.Description = '开机后等待网络就绪，然后自动开启 WiFi 热点'
+    $lnk.Description = $script:T.ShortcutAutoDesc
     $lnk.Save()
 }
 
 function Update-TrayDisplay {
     try {
         $status = Get-HotspotStatus
-        $stateText = if ($status.State -eq 'On') { '已开启' } else { '已关闭' }
-        $itemStatus.Text = "状态：$stateText（$($status.ClientCount)/$($status.MaxClients) 台设备）"
-        $tooltip = "WiFi 热点：$stateText`n$($status.Ssid)"
+        $stateText = if ($status.State -eq 'On') { $script:T.StateOn } else { $script:T.StateOff }
+        $itemStatus.Text = $script:T.StatusFormat -f $stateText, $status.ClientCount, $status.MaxClients
+        $tooltip = $script:T.TooltipFormat -f $stateText, $status.Ssid
         if ($tooltip.Length -gt 63) { $tooltip = $tooltip.Substring(0, 63) }
         $script:Notify.Text = $tooltip
 
@@ -355,18 +506,18 @@ function Update-TrayDisplay {
         $script:Notify.Icon = Get-StateIcon -State $iconState
     }
     catch {
-        $itemStatus.Text = '状态：读取失败'
-        Write-Log "刷新状态失败: $($_.Exception.Message)"
+        $itemStatus.Text = $script:T.StatusUnreadable
+        Write-Log ($script:T.LogRefreshFailed -f $_.Exception.Message)
     }
 }
 
 $itemOn.add_Click({
         try {
             Set-Hotspot -Target 'On' | Out-Null
-            $script:Notify.ShowBalloonTip(3000, 'WiFi 热点', '已开启，手机可以搜索并连接了。', [System.Windows.Forms.ToolTipIcon]::Info)
+            $script:Notify.ShowBalloonTip(3000, $script:T.NotifyTitle, $script:T.BalloonOn, [System.Windows.Forms.ToolTipIcon]::Info)
         }
         catch {
-            $script:Notify.ShowBalloonTip(5000, 'WiFi 热点', "开启失败：$($_.Exception.Message)", [System.Windows.Forms.ToolTipIcon]::Error)
+            $script:Notify.ShowBalloonTip(5000, $script:T.NotifyTitle, ($script:T.BalloonFailed -f $script:T.ActionOn, $_.Exception.Message), [System.Windows.Forms.ToolTipIcon]::Error)
         }
         Update-TrayDisplay
     })
@@ -374,10 +525,10 @@ $itemOn.add_Click({
 $itemOff.add_Click({
         try {
             Set-Hotspot -Target 'Off' | Out-Null
-            $script:Notify.ShowBalloonTip(3000, 'WiFi 热点', '已关闭。', [System.Windows.Forms.ToolTipIcon]::Info)
+            $script:Notify.ShowBalloonTip(3000, $script:T.NotifyTitle, $script:T.BalloonOff, [System.Windows.Forms.ToolTipIcon]::Info)
         }
         catch {
-            $script:Notify.ShowBalloonTip(5000, 'WiFi 热点', "关闭失败：$($_.Exception.Message)", [System.Windows.Forms.ToolTipIcon]::Error)
+            $script:Notify.ShowBalloonTip(5000, $script:T.NotifyTitle, ($script:T.BalloonFailed -f $script:T.ActionOff, $_.Exception.Message), [System.Windows.Forms.ToolTipIcon]::Error)
         }
         Update-TrayDisplay
     })
@@ -385,25 +536,26 @@ $itemOff.add_Click({
 $itemInfo.add_Click({
         try {
             $status = Get-HotspotStatus
+            $stateText = if ($status.State -eq 'On') { $script:T.StateOn } else { $script:T.StateOff }
             $lines = @(
-                "状态：$(if ($status.State -eq 'On') { '已开启' } else { '已关闭' })"
-                "网络名称：$($status.Ssid)"
-                "密码：$($status.Passphrase)"
-                "共享来源：$($status.Upstream)"
-                "已连接设备：$($status.ClientCount)/$($status.MaxClients)"
+                ($script:T.InfoState -f $stateText)
+                ($script:T.InfoSsid -f $status.Ssid)
+                ($script:T.InfoPassphrase -f $status.Passphrase)
+                ($script:T.InfoUpstream -f $status.Upstream)
+                ($script:T.InfoClients -f $status.ClientCount, $status.MaxClients)
             )
             if ($status.Clients.Count -gt 0) {
                 $lines += ''
-                $lines += '已连接设备列表：'
+                $lines += $script:T.InfoClientList
                 foreach ($c in $status.Clients) {
                     $lines += "  · $($c.DisplayName)  $($c.MacAddress)"
                 }
             }
-            [System.Windows.Forms.MessageBox]::Show(($lines -join [Environment]::NewLine), 'WiFi 热点连接信息',
+            [System.Windows.Forms.MessageBox]::Show(($lines -join [Environment]::NewLine), $script:T.InfoTitle,
                 [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
         }
         catch {
-            [System.Windows.Forms.MessageBox]::Show("读取失败：$($_.Exception.Message)", 'WiFi 热点',
+            [System.Windows.Forms.MessageBox]::Show(($script:T.InfoReadFailed -f $_.Exception.Message), $script:T.NotifyTitle,
                 [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
         }
     })
@@ -412,21 +564,22 @@ $itemStartup.add_Click({
         try {
             if ($itemStartup.Checked) {
                 New-TrayShortcut -Path $StartupLnk
-                Write-Log "已添加开机自启: $StartupLnk"
+                if (Test-Path -LiteralPath $AltStartupLnk) { Remove-Item -LiteralPath $AltStartupLnk -Force }
+                Write-Log ($script:T.LogStartupAdded -f $StartupLnk)
             }
             elseif (Test-Path -LiteralPath $StartupLnk) {
                 Remove-Item -LiteralPath $StartupLnk -Force
-                Write-Log '已移除开机自启'
+                Write-Log $script:T.LogStartupRemoved
             }
         }
         catch {
-            Write-Log "设置开机自启失败: $($_.Exception.Message)"
+            Write-Log ($script:T.LogStartupFailed -f $_.Exception.Message)
             $itemStartup.Checked = -not $itemStartup.Checked
         }
     })
 
 $itemExit.add_Click({
-        Write-Log '用户退出托盘程序'
+        Write-Log $script:T.LogExit
         $script:Notify.Visible = $false
         [System.Windows.Forms.Application]::Exit()
     })
@@ -435,15 +588,16 @@ $itemAutoHotspot.add_Click({
         try {
             if ($itemAutoHotspot.Checked) {
                 New-AutoHotspotShortcut
-                Write-Log "已添加开机自动开热点: $AutoHotspotLnk"
+                if (Test-Path -LiteralPath $AltAutoHotspotLnk) { Remove-Item -LiteralPath $AltAutoHotspotLnk -Force }
+                Write-Log ($script:T.LogAutoAdded -f $AutoHotspotLnk)
             }
             elseif (Test-Path -LiteralPath $AutoHotspotLnk) {
                 Remove-Item -LiteralPath $AutoHotspotLnk -Force
-                Write-Log '已移除开机自动开热点'
+                Write-Log $script:T.LogAutoRemoved
             }
         }
         catch {
-            Write-Log "设置开机自动开热点失败: $($_.Exception.Message)"
+            Write-Log ($script:T.LogAutoFailed -f $_.Exception.Message)
             $itemAutoHotspot.Checked = -not $itemAutoHotspot.Checked
         }
     })
@@ -455,14 +609,14 @@ $script:Notify.add_MouseDoubleClick({
             Set-Hotspot -Target $target | Out-Null
         }
         catch {
-            $script:Notify.ShowBalloonTip(5000, 'WiFi 热点', $_.Exception.Message, [System.Windows.Forms.ToolTipIcon]::Error)
+            $script:Notify.ShowBalloonTip(5000, $script:T.NotifyTitle, $_.Exception.Message, [System.Windows.Forms.ToolTipIcon]::Error)
         }
         Update-TrayDisplay
     })
 
 $script:Notify.ContextMenuStrip = $menu
-$itemStartup.Checked = Test-Path -LiteralPath $StartupLnk
-$itemAutoHotspot.Checked = Test-Path -LiteralPath $AutoHotspotLnk
+$itemStartup.Checked = (Test-Path -LiteralPath $StartupLnk) -or (Test-Path -LiteralPath $AltStartupLnk)
+$itemAutoHotspot.Checked = (Test-Path -LiteralPath $AutoHotspotLnk) -or (Test-Path -LiteralPath $AltAutoHotspotLnk)
 Update-TrayDisplay
 
 $timer = New-Object System.Windows.Forms.Timer
@@ -471,14 +625,15 @@ $timer.add_Tick({ Update-TrayDisplay })
 $timer.Start()
 
 $script:Notify.Visible = $true
-Write-Log '托盘程序启动'
+Write-Log $script:T.LogStarted
 
 if ($SelfTest) {
-    Write-Host '自检：图标、菜单、状态读取均已完成。'
+    Write-Host $script:T.SelfTestDone
+    Write-Host ("Language = $Language")
     (Get-HotspotStatus) | Format-List
     foreach ($state in @('off', 'on', 'on-clients')) {
         $candidate = Get-StateIcon -State $state
-        Write-Host ("图标 {0,-11} 尺寸 {1}x{2}" -f $state, $candidate.Width, $candidate.Height)
+        Write-Host ($script:T.IconLineFmt -f $state, $candidate.Width, $candidate.Height)
     }
     $timer.Stop()
     $script:Notify.Visible = $false
@@ -567,4 +722,4 @@ if ($PreviewIcons) {
 $timer.Stop()
 $script:Notify.Visible = $false
 $script:Notify.Dispose()
-Write-Log '托盘程序结束'
+Write-Log $script:T.LogStopped
